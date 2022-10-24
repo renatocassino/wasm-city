@@ -1,6 +1,7 @@
 mod utils;
 use wasm_bindgen::JsCast;
 use std::f64;
+use rand::Rng;
 
 use wasm_bindgen::prelude::*;
 
@@ -17,45 +18,83 @@ extern {
 
 #[wasm_bindgen]
 pub struct Flake {
-    x: i32,
-    y: i32,
+    x: f64,
+    y: f64,
+    size: i32,
+    x_velocity: f64,
+    y_velocity: f64,
 }
 
 impl Flake {
-    pub fn new(x: i32, y: i32) -> Flake {
-        Flake { x, y }
+    pub fn new(width: u32, height: u32) -> Flake {
+        let mut rng = rand::thread_rng();
+        let size: i32 = rng.gen_range(3..6);
+        let x: f64 = rng.gen_range(0.0..width as f64);
+        let y: f64 = 0.0 - rng.gen_range(10.0..300.0);
+
+        let x_velocity: f64 = rng.gen_range(-0.5..0.5);
+        let y_velocity: f64 = rng.gen_range(0.2..1.0);
+
+        Flake { x, y, size, x_velocity, y_velocity }
     }
 
     pub fn draw(&self, context: &web_sys::CanvasRenderingContext2d) {
-        context.arc(self.x as f64, self.y as f64, 3.0, 0.0, 2.0 * f64::consts::PI).unwrap();
+        context.begin_path();
+        context.arc(self.x, self.y, self.size as f64, 0.0, 2.0 * f64::consts::PI).unwrap();
         context.set_fill_style(&JsValue::from("white"));
         context.fill();
+        context.stroke();
     }
 
-    pub fn tick(&self, context: &web_sys::CanvasRenderingContext2d) {
+    pub fn tick(&mut self, context: &web_sys::CanvasRenderingContext2d) {
         self.draw(&context);
-        // self.y += 1;
+        let mut rng = rand::thread_rng();
+        let x_force = rng.gen_range(-0.05..0.05);
+        self.x_velocity += x_force;
+
+        self.y += self.y_velocity;
+        self.x += self.x_velocity;
     }
 }
 
 #[wasm_bindgen]
 pub struct Snow {
     flakes: Vec<Flake>,
+    width: u32,
+    height: u32,
 }
 
 impl Snow {
-    pub fn new() -> Snow {
+    pub fn new(width: u32, height: u32) -> Snow {
         let mut flakes: Vec<Flake> = vec![];
-        flakes.push(Flake::new(100, 100));
+
+        for _ in 0..100 {
+            flakes.push(Flake::new(width, height));
+        }
 
         Snow {
             flakes,
+            width,
+            height,
         }
     }
 
-    pub fn tick(&self, context: &web_sys::CanvasRenderingContext2d) {
-        for flake in &self.flakes {
+    pub fn tick(&mut self, context: &web_sys::CanvasRenderingContext2d) {
+        for flake in &mut self.flakes {
             flake.tick(&context);
+
+            let mut respawn = false;
+            if flake.y > self.height as f64 + 10.0 {
+                respawn = true;
+            }
+
+            if flake.x > self.width as f64 + 10.0 || flake.x < -10.0 {
+                respawn = true;
+            }
+
+            if respawn {
+                *flake = Flake::new(self.width, self.height);
+            }
         }
     }
 }
@@ -93,7 +132,7 @@ impl Universe {
             width: width.parse::<u32>().unwrap(),
             height: height.parse::<u32>().unwrap(),
             context,
-            snow: Snow::new(),
+            snow: Snow::new(width.parse::<u32>().unwrap(), height.parse::<u32>().unwrap()),
         }
     }
 
@@ -106,17 +145,16 @@ impl Universe {
     }
 
     fn clear_world(&self) {
-        self.context.move_to(0.0, 0.0);
-        self.context.set_fill_style(&JsValue::from("black"));
+        self.context.begin_path();
+        self.context.set_fill_style(&JsValue::from("#111"));
         self.context.fill_rect(0.0, 0.0, self.width as f64, self.height as f64);
+        self.context.stroke();
     }
 
-    pub fn tick(&self) {
-        self.context.begin_path();
+    pub fn tick(&mut self) {
         self.clear_world();
 
         self.snow.tick(&self.context);
 
-        self.context.stroke();
     }
 }
